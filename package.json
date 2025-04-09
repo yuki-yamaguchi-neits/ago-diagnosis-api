@@ -1,13 +1,13 @@
-
 {
-  "name": "ago-diagnosis-v2",
+  "name": "ago-diagnosis-api",
   "version": "1.0.0",
-  "description": "Production-style diagnosis API for AI-optimized SEO",
+  "description": "A simple diagnosis API for AI-oriented SEO evaluation",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "express": "^4.18.2"
+    "express": "^4.18.2",
+    "cors": "^2.8.5"
   }
 }
