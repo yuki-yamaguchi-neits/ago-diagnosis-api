@@ -1,4 +1,3 @@
-
 const express = require('express');
 const app = express();
 const port = process.env.PORT || 3000;
@@ -7,13 +6,12 @@ app.get('/', (req, res) => {
   res.send('AGO Diagnosis API is running. Use /diagnose?url=YOUR_URL');
 });
 
-app.get('/diagnose', async (req, res) => {
+app.get('/diagnose', (req, res) => {
   const url = req.query.url;
   if (!url) {
-    return res.status(400).json({ error: 'Missing url parameter' });
+    return res.status(400).send('Missing url parameter');
   }
 
-  // ここはGPT出力を仮想で埋め込んだ状態
   const diagnosis = {
     target: url,
     date: new Date().toISOString().slice(0, 10),
