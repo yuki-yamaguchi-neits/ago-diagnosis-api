@@ -1,7 +1,10 @@
 
 const express = require('express');
+const cors = require('cors');
 const app = express();
 const port = process.env.PORT || 3000;
+
+app.use(cors());
 
 app.get('/', (req, res) => {
   res.send('AGO Diagnosis API is running. Use /diagnose?url=YOUR_URL');
@@ -62,9 +65,5 @@ app.get('/diagnose', (req, res) => {
 });
 
 app.listen(port, () => {
-  console.log(`AGO Diagnosis API with plan listening at http://localhost:${port}`);
+  console.log(`AGO Diagnosis API listening at http://localhost:${port}`);
 });
-
-const cors = require('cors'); // ← 追加
-app.use(cors());              // ← この行も追加
-
