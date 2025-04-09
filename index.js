@@ -64,3 +64,7 @@ app.get('/diagnose', (req, res) => {
 app.listen(port, () => {
   console.log(`AGO Diagnosis API with plan listening at http://localhost:${port}`);
 });
+
+const cors = require('cors'); // ← 追加
+app.use(cors());              // ← この行も追加
+
