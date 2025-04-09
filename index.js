@@ -1,3 +1,4 @@
+
 const express = require('express');
 const app = express();
 const port = process.env.PORT || 3000;
@@ -45,12 +46,21 @@ app.get('/diagnose', (req, res) => {
         comment: "llms.txtなし、代替テキストも未整備。plainテキストもなし。"
       }
     ],
-    recommendation: "llms.txtと構造化データを整備し、E-E-A-Tの強化とplainテキスト生成を行いましょう。"
+    recommendation: "llms.txtと構造化データを整備し、E-E-A-Tの強化とplainテキスト生成を行いましょう。",
+    plan: {
+      recommended: "基本パック（10万円）",
+      reasons: [
+        "構造化データが未設定",
+        "llms.txtの設置が必要",
+        "E-E-A-T関連の信頼性情報が弱い"
+      ],
+      expected_rank_after: "B〜Aランク"
+    }
   };
 
   res.json(diagnosis);
 });
 
 app.listen(port, () => {
-  console.log(`AGO Diagnosis API listening at http://localhost:${port}`);
+  console.log(`AGO Diagnosis API with plan listening at http://localhost:${port}`);
 });
