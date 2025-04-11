@@ -1,8 +1,8 @@
-import express from "express";
-import cors from "cors";
-import axios from "axios";
-import cheerio from "cheerio";
-import OpenAI from "openai";
+const express = require("express");
+const cors = require("cors");
+const axios = require("axios");
+const cheerio = require("cheerio");
+const OpenAI = require("openai");
 
 const app = express();
 app.use(cors());
@@ -17,7 +17,6 @@ app.get("/api/diagnose", async (req, res) => {
     const { data: html } = await axios.get(url);
     const $ = cheerio.load(html);
 
-    // ← 本番ではもっと複雑にする。ここは仮ロジック（評価できたかどうか含めて）
     const results = [
       { name: "title", value: $("title").text().trim().length > 0 ? 5 : 0 },
       { name: "metaDesc", value: $('meta[name="description"]').attr("content") ? 5 : 0 },
