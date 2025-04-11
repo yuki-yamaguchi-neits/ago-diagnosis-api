@@ -43,7 +43,7 @@ app.get("/api/diagnose", async (req, res) => {
     const gptPrompt = `以下の情報を元に、このWebサイトのAI検索への最適化状況を100文字以内で総評してください。\n- スコア：${scorePercentage}%\n- ランク：${rank}\n- 評価項目数：${validCount}/90`;
 
     const completion = await openai.chat.completions.create({
-      model: "gpt-4",
+      model: "gpt-3.5-turbo",  // ← ← ← 安定版に変更済み
       messages: [{ role: "user", content: gptPrompt }],
     });
 
