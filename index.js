@@ -1,69 +1,70 @@
+import express from "express";
+import cors from "cors";
+import axios from "axios";
+import cheerio from "cheerio";
+import OpenAI from "openai";
 
-const express = require('express');
-const cors = require('cors');
 const app = express();
-const port = process.env.PORT || 3000;
-
 app.use(cors());
 
-app.get('/', (req, res) => {
-  res.send('AGO Diagnosis API is running. Use /diagnose?url=YOUR_URL');
-});
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-app.get('/diagnose', (req, res) => {
+app.get("/api/diagnose", async (req, res) => {
   const url = req.query.url;
-  if (!url) {
-    return res.status(400).send('Missing url parameter');
+  if (!url) return res.status(400).json({ error: "Missing URL" });
+
+  try {
+    const { data: html } = await axios.get(url);
+    const $ = cheerio.load(html);
+
+    // ← 本番ではもっと複雑にする。ここは仮ロジック（評価できたかどうか含めて）
+    const results = [
+      { name: "title", value: $("title").text().trim().length > 0 ? 5 : 0 },
+      { name: "metaDesc", value: $('meta[name="description"]').attr("content") ? 5 : 0 },
+      { name: "ogp", value: $('meta[property^="og:"]').length >= 3 ? 5 : 0 },
+      { name: "canonical", value: $('link[rel="canonical"]').attr("href") ? 5 : 0 },
+      { name: "lang", value: $("html").attr("lang") ? 5 : 0 },
+      { name: "jsonld", value: $('script[type="application/ld+json"]').length > 0 ? 5 : 0 },
+      { name: "h1", value: $("h1").length > 0 ? 5 : 0 },
+      { name: "favicon", value: $('link[rel="icon"]').attr("href") ? 5 : 0 },
+    ];
+
+    const validResults = results.filter(r => typeof r.value === "number");
+    const totalScore = validResults.reduce((sum, r) => sum + r.value, 0);
+    const maxScore = validResults.length * 5;
+    const scorePercentage = Math.round((totalScore / maxScore) * 100);
+    const validCount = validResults.length;
+
+    const rank =
+      scorePercentage >= 90 ? "S" :
+      scorePercentage >= 80 ? "A" :
+      scorePercentage >= 65 ? "B" :
+      scorePercentage >= 50 ? "C" : "D";
+
+    const gptPrompt = `以下の情報を元に、このWebサイトのAI検索への最適化状況を100文字以内で総評してください。\n- スコア：${scorePercentage}%\n- ランク：${rank}\n- 評価項目数：${validCount}/90`;
+
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4",
+      messages: [{ role: "user", content: gptPrompt }],
+    });
+
+    const comment = completion.choices[0].message.content.trim();
+
+    res.json({
+      url,
+      date: new Date().toISOString().slice(0, 10),
+      scorePercentage,
+      validCount,
+      rank,
+      comment
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "診断処理中にエラーが発生しました" });
   }
-
-  const diagnosis = {
-    target: url,
-    date: new Date().toISOString().slice(0, 10),
-    score: 41,
-    rank: "D",
-    summary: "構造化データ未設定、llms.txtも確認できません。AIにとって認識されにくいサイト構造です。",
-    sections: [
-      {
-        name: "技術的SEO",
-        score: 2,
-        comment: "metaタグはあるが構造化データがなく、llms.txtも存在しません。"
-      },
-      {
-        name: "信頼性要素（E-E-A-T）",
-        score: 1,
-        comment: "代表者・会社情報・SNS情報が不十分です。"
-      },
-      {
-        name: "コンテンツの厚み",
-        score: 2,
-        comment: "情報はあるがオリジナリティや専門性が伝わりにくい構成です。"
-      },
-      {
-        name: "拡散力・言及性",
-        score: 1,
-        comment: "外部リンクや引用される要素が少なく、ナレッジパネルも確認できません。"
-      },
-      {
-        name: "AI読み取り支援",
-        score: 1,
-        comment: "llms.txtなし、代替テキストも未整備。plainテキストもなし。"
-      }
-    ],
-    recommendation: "llms.txtと構造化データを整備し、E-E-A-Tの強化とplainテキスト生成を行いましょう。",
-    plan: {
-      recommended: "基本パック（10万円）",
-      reasons: [
-        "構造化データが未設定",
-        "llms.txtの設置が必要",
-        "E-E-A-T関連の信頼性情報が弱い"
-      ],
-      expected_rank_after: "B〜Aランク"
-    }
-  };
-
-  res.json(diagnosis);
 });
 
-app.listen(port, () => {
-  console.log(`AGO Diagnosis API listening at http://localhost:${port}`);
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
