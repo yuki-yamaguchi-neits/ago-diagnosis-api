@@ -1,245 +1,145 @@
-const express = require("express");
-const cors = require("cors");
-const axios = require("axios");
-const cheerio = require("cheerio");
-const OpenAI = require("openai");
+import express from 'express';
+import cors from 'cors';
+import axios from 'axios';
+import cheerio from 'cheerio';
+import fs from 'fs';
+import csv from 'csv-parser';
+import OpenAI from 'openai';
 
 const app = express();
+const port = process.env.PORT || 3000;
 app.use(cors());
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-app.get("/api/diagnose", async (req, res) => {
+const csvPath = './data/ai-diagnosis-definition-v1.csv';
+
+// CSV読み込み
+async function loadCSV() {
+  return new Promise((resolve, reject) => {
+    const results = [];
+    fs.createReadStream(csvPath)
+      .pipe(csv())
+      .on('data', (data) => results.push(data))
+      .on('end', () => resolve(results))
+      .on('error', (err) => reject(err));
+  });
+}
+
+// GPT生成
+async function generateGPTComment(prompt) {
+  const completion = await openai.chat.completions.create({
+    messages: [{ role: 'user', content: prompt }],
+    model: 'gpt-4-turbo',
+  });
+  return completion.choices[0].message.content.trim();
+}
+
+// 各項目の評価処理
+async function evaluateItem(item, $) {
+  const {
+    項目コード,
+    項目名,
+    判定対象,
+    評価方式コード,
+    評価基準,
+    AIへの評価プロンプト,
+  } = item;
+
+  const id = 項目コード;
+  const label = 項目名;
+  const method = 評価方式コード;
+
+  if (method === '0') {
+    const value = $(判定対象).length;
+    const score = value > 0 ? 5 : 0;
+    const rank = score >= 5 ? 'A' : score >= 3 ? 'B' : score > 0 ? 'C' : 'D';
+    return {
+      id,
+      label,
+      score,
+      rank,
+      comment: value > 0 ? '該当要素が存在しています。' : '該当要素が確認できません。',
+      recommendation: score < 5 ? '設定が必要です。' : '現状維持で問題ありません。',
+      source: 'machine',
+    };
+  }
+
+  if (method === '1') {
+    const comment = await generateGPTComment(AIへの評価プロンプト);
+    return {
+      id,
+      label,
+      score: 3,
+      rank: 'B',
+      comment,
+      recommendation: '詳細はコメントを参照',
+      source: 'ai',
+    };
+  }
+
+  if (method === '2') {
+    const raw = $(判定対象).text().trim().slice(0, 300);
+    const prompt = `以下のHTML要素に基づいて、${AIへの評価プロンプト} \n\n対象内容:\n${raw}`;
+    const comment = await generateGPTComment(prompt);
+    return {
+      id,
+      label,
+      score: 3,
+      rank: 'B',
+      comment,
+      recommendation: '内容を見直すと効果的です。',
+      source: 'hybrid',
+    };
+  }
+
+  return {
+    id,
+    label,
+    score: 0,
+    rank: '未評価',
+    comment: '評価方式コードに対応していません',
+    recommendation: '',
+    source: 'unknown',
+  };
+}
+
+// メインAPI：診断エンドポイント
+app.get('/diagnose', async (req, res) => {
   const url = req.query.url;
-  if (!url) return res.status(400).json({ error: "Missing URL" });
+  if (!url) return res.status(400).json({ error: 'urlパラメータが必要です' });
 
   try {
-    const { data: html } = await axios.get(url);
-    const $ = cheerio.load(html);
+    const csvData = await loadCSV();
+    const { data } = await axios.get(url);
+    const $ = cheerio.load(data);
 
-    const results = [
-      { name: "title", value: $("title").text().trim().length > 0 ? 5 : 0 },
-      { name: "metaDesc", value: $('meta[name="description"]').attr("content") ? 5 : 0 },
-      { name: "ogp", value: $('meta[property^="og:"]').length >= 3 ? 5 : 0 },
-      { name: "canonical", value: $('link[rel="canonical"]').attr("href") ? 5 : 0 },
-      { name: "lang", value: $("html").attr("lang") ? 5 : 0 },
-      { name: "jsonld", value: $('script[type="application/ld+json"]').length > 0 ? 5 : 0 },
-      { name: "h1", value: $("h1").length > 0 ? 5 : 0 },
-      { name: "favicon", value: $('link[rel="icon"]').attr("href") ? 5 : 0 },
-    ];
+    const results = [];
+    for (const item of csvData) {
+      const result = await evaluateItem(item, $);
+      results.push(result);
+    }
 
-    const validResults = results.filter(r => typeof r.value === "number");
-    const totalScore = validResults.reduce((sum, r) => sum + r.value, 0);
-    const maxScore = validResults.length * 5;
-    const scorePercentage = Math.round((totalScore / maxScore) * 100);
-    const validCount = validResults.length;
-
+    const totalScore = results.reduce((acc, cur) => acc + cur.score, 0);
+    const maxScore = results.length * 5;
+    const percentage = Math.round((totalScore / maxScore) * 100);
     const rank =
-      scorePercentage >= 90 ? "S" :
-      scorePercentage >= 80 ? "A" :
-      scorePercentage >= 65 ? "B" :
-      scorePercentage >= 50 ? "C" : "D";
-
-    const gptPrompt = `以下の情報を元に、このWebサイトのAI検索への最適化状況を100文字以内で総評してください。\n- スコア：${scorePercentage}%\n- ランク：${rank}\n- 評価項目数：${validCount}/90`;
-
-    const completion = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",  // ← ← ← 安定版に変更済み
-      messages: [{ role: "user", content: gptPrompt }],
-    });
-
-    const comment = completion.choices[0].message.content.trim();
+      percentage >= 90 ? 'S' : percentage >= 75 ? 'A' : percentage >= 60 ? 'B' : percentage >= 40 ? 'C' : 'D';
 
     res.json({
+      category: 'AI対策診断',
       url,
-      date: new Date().toISOString().slice(0, 10),
-      scorePercentage,
-      validCount,
+      evaluated_items: results.length,
+      total_score: percentage,
       rank,
-      comment
+      items: results,
     });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "診断処理中にエラーが発生しました" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: '診断処理でエラーが発生しました' });
   }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
-
-
-//ここからカテゴリ①Ａ判定コード
-app.get("/api/diagnose/1a", async (req, res) => {
-  const url = req.query.url;
-  if (!url) return res.status(400).json({ error: "Missing URL" });
-
-  try {
-    const { data: html } = await axios.get(url);
-    const $ = cheerio.load(html);
-
-    const checks = [
-      {
-        name: "タイトル（titleタグ）",
-        raw: $("title").text().trim(),
-        evaluate(value) {
-          const len = value.length;
-          if (!value) return 0;
-          if (len < 10) return 2;
-          if (len < 20) return 3;
-          if (len < 30) return 4;
-          return 5;
-        },
-        advice: "タイトルは30文字前後で内容が伝わるものにしましょう"
-      },
-      {
-        name: "ディスクリプション（meta description）",
-        raw: $('meta[name="description"]').attr("content") || "",
-        evaluate(value) {
-          const len = value.length;
-          if (!value) return 0;
-          if (len < 50) return 2;
-          if (len < 100) return 3;
-          if (len < 160) return 5;
-          return 4;
-        },
-        advice: "自然な日本語で120〜160文字程度が望ましいです"
-      },
-      {
-        name: "OGPタグ",
-        raw: $('meta[property^="og:"]').length,
-        evaluate(count) {
-          if (count >= 5) return 5;
-          if (count >= 3) return 4;
-          if (count >= 1) return 2;
-          return 0;
-        },
-        advice: "og:title / og:description / og:image を設定してください"
-      },
-      {
-        name: "JSON-LD構造化データ",
-        raw: $('script[type="application/ld+json"]').length,
-        evaluate(count) {
-          if (count === 0) return 0;
-          if (count >= 1) return 5;
-          return 2;
-        },
-        advice: "schema.org に準拠したJSON-LDを設置しましょう"
-      },
-      {
-        name: "canonicalタグ",
-        raw: $('link[rel="canonical"]').attr("href") || "",
-        evaluate(value) {
-          if (!value) return 0;
-          if (value.includes("http")) return 5;
-          return 3;
-        },
-        advice: "正規URLを絶対パスで指定してください"
-      },
-      {
-        name: "htmlタグのlang属性",
-        raw: $("html").attr("lang") || "",
-        evaluate(value) {
-          if (value === "ja") return 5;
-          if (value) return 3;
-          return 0;
-        },
-        advice: "htmlタグに lang=\"ja\" を明示しましょう"
-      },
-      {
-        name: "favicon設定",
-        raw: $('link[rel="icon"]').attr("href") || "",
-        evaluate(value) {
-          if (!value) return 0;
-          return 5;
-        },
-        advice: "サイト認知のため favicon.ico を設定しましょう"
-      },
-      {
-        name: "Twitterカード",
-        raw: $('meta[name="twitter:card"]').length,
-        evaluate(count) {
-          if (count > 0) return 5;
-          return 0;
-        },
-        advice: "twitter:card など SNS対応メタを設定してください"
-      },
-      {
-        name: "WebSiteスキーマ",
-        raw: html.includes('"@type": "WebSite"'),
-        evaluate(bool) {
-          return bool ? 5 : 0;
-        },
-        advice: "トップページにはWebSiteタイプを含めましょう"
-      },
-      {
-        name: "Organizationスキーマ",
-        raw: html.includes('"@type": "Organization"'),
-        evaluate(bool) {
-          return bool ? 5 : 0;
-        },
-        advice: "会社名・連絡先・ロゴのスキーマを含めてください"
-      },
-      {
-        name: "Serviceスキーマ",
-        raw: html.includes('"@type": "Service"'),
-        evaluate(bool) {
-          return bool ? 5 : 0;
-        },
-        advice: "提供するサービス内容を構造化データ化しましょう"
-      },
-      {
-        name: "FAQスキーマ",
-        raw: html.includes('"@type": "FAQPage"'),
-        evaluate(bool) {
-          return bool ? 5 : 0;
-        },
-        advice: "よくある質問がある場合はFAQスキーマを活用しましょう"
-      },
-    ];
-
-    const items = checks.map(check => {
-      const score = check.evaluate(check.raw);
-      const comment = `現在の状態：${typeof check.raw === "boolean" ? (check.raw ? "◯" : "×") : check.raw}`;
-      return {
-        name: check.name,
-        score,
-        comment,
-        advice: check.advice
-      };
-    });
-
-    const validItems = items.filter(i => typeof i.score === "number");
-    const totalScore = validItems.reduce((sum, i) => sum + i.score, 0);
-    const maxScore = validItems.length * 5;
-    const scorePercentage = Math.round((totalScore / maxScore) * 100);
-    const validCount = validItems.length;
-
-    const rank =
-      scorePercentage >= 90 ? "S" :
-      scorePercentage >= 80 ? "A" :
-      scorePercentage >= 65 ? "B" :
-      scorePercentage >= 50 ? "C" : "D";
-
-    const gptPrompt = `以下はカテゴリ①A（構造・メタデータ対策）の診断結果です。お客様向けに、100文字以内のやさしい総評コメントを出してください。\nスコア: ${scorePercentage}%\nランク: ${rank}\n診断項目数: ${validCount}/12`;
-
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4",
-      messages: [{ role: "user", content: gptPrompt }]
-    });
-
-    const summary = completion.choices[0].message.content.trim();
-
-    res.json({
-      scorePercentage,
-      validCount,
-      rank,
-      summary,
-      items: validItems
-    });
-
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "診断エラーが発生しました" });
-  }
+app.listen(port, () => {
+  console.log(`診断サーバー起動：http://localhost:${port}`);
 });
