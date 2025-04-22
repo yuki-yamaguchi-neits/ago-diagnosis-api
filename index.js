@@ -33,14 +33,20 @@ async function generateGPTComment(prompt) {
   return response.choices[0].message.content.trim();
 }
 
+function inferScoreFromComment(comment) {
+  if (/良好|十分|問題なし|適切/i.test(comment)) return { score: 5, rank: 'A' };
+  if (/一部|やや|改善/i.test(comment)) return { score: 3, rank: 'B' };
+  if (/不十分|不足|見つからない/i.test(comment)) return { score: 1, rank: 'D' };
+  return { score: 2, rank: 'C' };
+}
+
 async function evaluateItem(item, $) {
   const {
     項目コード,
     項目名,
     判定対象,
     評価方式コード,
-    評価プロンプト,
-    評価基準
+    評価プロンプト
   } = item;
 
   const id = 項目コード;
@@ -61,7 +67,6 @@ async function evaluateItem(item, $) {
   }
 
   try {
-    // --- 評価方式コード 0（機械的処理） ---
     if (method === '0') {
       const value = $(selector);
       const count = value.length;
@@ -79,18 +84,18 @@ async function evaluateItem(item, $) {
       };
     }
 
-    // --- 評価方式コード 1 または 2（AI or ハイブリッド） ---
     if (method === '1' || method === '2') {
-      const html = $(selector).html() || $(selector).text() || '対象要素の内容が取得できませんでした';
-      const prompt = `${評価プロンプト}\n\n対象のHTML:\n${html}`;
-
+      const rawHtml = $(selector).html() || $(selector).text() || '';
+      const trimmed = rawHtml.slice(0, 1000);
+      const prompt = `${評価プロンプト}\n\n対象のHTML:\n${trimmed}`;
       const comment = await generateGPTComment(prompt);
+      const { score, rank } = inferScoreFromComment(comment);
 
       return {
         id,
         label,
-        score: 3, // TODO: ★ここは後でコメントに応じて動的スコア化
-        rank: 'B',
+        score,
+        rank,
         comment,
         recommendation: 'AIによる評価に基づく内容を確認してください。',
         source: method === '1' ? 'ai' : 'hybrid'
