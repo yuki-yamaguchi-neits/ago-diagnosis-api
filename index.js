@@ -1,9 +1,9 @@
 import express from 'express';
 import cors from 'cors';
-import axios from 'axios';
-import * as cheerio from 'cheerio';
 import fs from 'fs';
 import csv from 'csv-parser';
+import axios from 'axios';
+import * as cheerio from 'cheerio';
 import OpenAI from 'openai';
 
 const app = express();
@@ -11,10 +11,8 @@ const port = process.env.PORT || 3000;
 app.use(cors());
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
 const csvPath = './data/ai-diagnosis-definition-v1.csv';
 
-// CSV読み込み
 async function loadCSV() {
   return new Promise((resolve, reject) => {
     const results = [];
@@ -26,124 +24,110 @@ async function loadCSV() {
   });
 }
 
-// GPT生成
 async function generateGPTComment(prompt) {
-  const completion = await openai.chat.completions.create({
+  const response = await openai.chat.completions.create({
+    model: 'gpt-4',
     messages: [{ role: 'user', content: prompt }],
-    model: 'gpt-4-turbo',
+    max_tokens: 500
   });
-  return completion.choices[0].message.content.trim();
+  return response.choices[0].message.content.trim();
 }
 
-// 各項目の評価処理
 async function evaluateItem(item, $) {
   const {
     項目コード,
     項目名,
     判定対象,
     評価方式コード,
-    評価基準,
-    AIへの評価プロンプト,
+    評価プロンプト,
+    評価基準
   } = item;
 
   const id = 項目コード;
   const label = 項目名;
-  const method = 評価方式コード;
-
-if (method === '0') {
+  const method = 評価方式コード.trim();
   const selector = 判定対象?.trim();
 
-  // ✅ 不正・空のセレクタを除外（空・スペース・#・. 単体など）
-  if (!selector || selector.match(/^(\s*|[#.]?\s*)$/)) {
-    console.warn(`⚠ 無効なセレクタでスキップ：id=${id}, セレクタ="${selector}"`);
+  if (!selector || selector.match(/^\s*$/)) {
     return {
       id,
       label,
       score: 0,
       rank: 'D',
-      comment: 'この診断項目のセレクタが未設定または無効です。',
-      recommendation: 'CSVで該当行の「判定対象」列に正しいCSSセレクタを記入してください。',
+      comment: '判定対象が未設定です',
+      recommendation: 'CSVの判定対象列を確認してください',
       source: 'machine'
     };
   }
 
   try {
-    console.log(`▼診断実行中: id=${id}, セレクタ="${selector}"`);
-    const value = $(selector).length;
-    const score = value > 0 ? 5 : 0;
-    const rank = score >= 5 ? 'A' : score >= 3 ? 'B' : score > 0 ? 'C' : 'D';
+    // --- 評価方式コード 0（機械的処理） ---
+    if (method === '0') {
+      const value = $(selector);
+      const count = value.length;
+      const score = count > 0 ? 5 : 0;
+      const rank = score === 5 ? 'A' : score >= 3 ? 'B' : score > 0 ? 'C' : 'D';
+
+      return {
+        id,
+        label,
+        score,
+        rank,
+        comment: count > 0 ? '対象要素が確認されました。' : '対象要素が見つかりません。',
+        recommendation: count > 0 ? '現状維持で問題ありません。' : 'HTMLに要素を追加してください。',
+        source: 'machine'
+      };
+    }
+
+    // --- 評価方式コード 1 または 2（AI or ハイブリッド） ---
+    if (method === '1' || method === '2') {
+      const html = $(selector).html() || $(selector).text() || '対象要素の内容が取得できませんでした';
+      const prompt = `${評価プロンプト}\n\n対象のHTML:\n${html}`;
+
+      const comment = await generateGPTComment(prompt);
+
+      return {
+        id,
+        label,
+        score: 3, // TODO: ★ここは後でコメントに応じて動的スコア化
+        rank: 'B',
+        comment,
+        recommendation: 'AIによる評価に基づく内容を確認してください。',
+        source: method === '1' ? 'ai' : 'hybrid'
+      };
+    }
 
     return {
       id,
       label,
-      score,
-      rank,
-      comment: value > 0 ? '該当要素がHTML内に存在しています。' : '該当要素が見つかりませんでした。',
-      recommendation: score < 5 ? 'HTMLに必要な構造が存在しません。適切に設置してください。' : '現状維持で問題ありません。',
-      source: 'machine'
+      score: 0,
+      rank: '未評価',
+      comment: '不明な評価方式コードです',
+      recommendation: '',
+      source: 'unknown'
     };
+
   } catch (err) {
-    console.error(`❌ セレクタ解析エラー: id=${id}, セレクタ="${selector}" → ${err.message}`);
     return {
       id,
       label,
       score: 0,
       rank: 'D',
-      comment: `【解析エラー】"${selector}" の処理中にエラーが発生しました。`,
-      recommendation: 'CSSセレクタの形式が正しいかCSVを確認してください。',
-      source: 'machine'
+      comment: `処理中にエラーが発生しました: ${err.message}`,
+      recommendation: '対象セレクタやHTML構造を見直してください',
+      source: 'error'
     };
   }
 }
-  
-  if (method === '1') {
-    const comment = await generateGPTComment(AIへの評価プロンプト);
-    return {
-      id,
-      label,
-      score: 3,
-      rank: 'B',
-      comment,
-      recommendation: '詳細はコメントを参照',
-      source: 'ai',
-    };
-  }
 
-  if (method === '2') {
-    const raw = $(判定対象).text().trim().slice(0, 300);
-    const prompt = `以下のHTML要素に基づいて、${AIへの評価プロンプト} \n\n対象内容:\n${raw}`;
-    const comment = await generateGPTComment(prompt);
-    return {
-      id,
-      label,
-      score: 3,
-      rank: 'B',
-      comment,
-      recommendation: '内容を見直すと効果的です。',
-      source: 'hybrid',
-    };
-  }
-
-  return {
-    id,
-    label,
-    score: 0,
-    rank: '未評価',
-    comment: '評価方式コードに対応していません',
-    recommendation: '',
-    source: 'unknown',
-  };
-}
-
-// メインAPI：診断エンドポイント
 app.get('/diagnose', async (req, res) => {
   const url = req.query.url;
   if (!url) return res.status(400).json({ error: 'urlパラメータが必要です' });
 
   try {
     const csvData = await loadCSV();
-    const { data } = await axios.get(url);
-    const $ = cheerio.load(data);
+    const response = await axios.get(url);
+    const $ = cheerio.load(response.data);
 
     const results = [];
     for (const item of csvData) {
@@ -151,23 +135,23 @@ app.get('/diagnose', async (req, res) => {
       results.push(result);
     }
 
-    const totalScore = results.reduce((acc, cur) => acc + cur.score, 0);
+    const totalScore = results.reduce((sum, r) => sum + r.score, 0);
     const maxScore = results.length * 5;
     const percentage = Math.round((totalScore / maxScore) * 100);
-    const rank =
-      percentage >= 90 ? 'S' : percentage >= 75 ? 'A' : percentage >= 60 ? 'B' : percentage >= 40 ? 'C' : 'D';
+    const rank = percentage >= 90 ? 'S' : percentage >= 75 ? 'A' : percentage >= 60 ? 'B' : percentage >= 40 ? 'C' : 'D';
 
     res.json({
-      category: 'AI対策診断',
+      timestamp: new Date().toISOString(),
       url,
       evaluated_items: results.length,
-      total_score: percentage,
+      total_score: totalScore,
+      percentage,
       rank,
-      items: results,
+      results
     });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: '診断処理でエラーが発生しました' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: '診断処理中にエラーが発生しました' });
   }
 });
 
