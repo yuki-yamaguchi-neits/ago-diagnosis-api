@@ -1,13 +1,13 @@
-カテゴリ,項目コード,項目名,判定対象,判定方法（ロジック）,評価方式コード,評価方式説明,評価基準,機械ロジック式（簡易記述）,AIプロンプトの目的,AIへの評価プロンプト,重要度（現時点）,将来の影響力（予測）,影響区分
-①A,1a-01,構造化データ（JSON-LD）,"$('script[type=""application/ld+json""]').length",構造化データの有無と整備度を確認,0,機械,"0=未設置, 1=内容不明, 2=不完全, 3=複数不整合, 4=単一整備, 5=複数整備",@typeとプロパティ種別のスキャン,,,高,中,0（全般）
-①A,1a-02,WebSiteスキーマ,$('script').text().includes('WebSite'),WebSiteスキーマの有無と記述内容を評価,0,機械,"0=なし, 1=名称のみ, 2=URL記載, 3=検索Action定義, 4=構造的に記述, 5=目的明示",'WebSite'型の構文抽出とプロパティ数,,,中,中,1（LLMO）
-①A,1a-03,Organizationスキーマ,$('script').text().includes('Organization'),組織情報の構造化と内容網羅性を評価,0,機械,"0=なし, 1=社名のみ, 2=社名＋URL, 3=ロゴや連絡先, 4=所在地含む, 5=全要素＋関連付",プロパティ（name/logo/contactなど）の存在数,,,高,中,2（RAG）
-①A,1a-04,Serviceスキーマ,$('script').text().includes('Service'),スキーマ構造を機械で抽出し、記述の具体性はAIが判断,2,機械＋AI併用,"0=なし, 1=名称のみ, 2=簡易説明, 3=カテゴリ記載, 4=範囲明記, 5=全体像明示","'name', 'serviceType', 'areaServed' 抽出",サービス説明が具体的かどうか,以下のServiceスキーマ説明は具体的か？評価基準で5段階評価せよ。,高,中,1（LLMO）
-①A,1a-05,FAQスキーマ,$('script').text().includes('FAQPage'),構造は機械で確認、Q&Aの整合性はAI判断,2,機械＋AI併用,"0=なし, 1=非構造FAQ, 2=構造不足, 3=一部構造化, 4=主要質問構造済, 5=全体構造済",mainEntityのpresence＋Q/A数,質問と回答の意味的対応,次のFAQペアは整合しているか？評価基準に従って5段階で評価せよ。,高,中,1（LLMO）
-①A,1a-06,カノニカルURL,"$('link[rel=""canonical""]').attr('href')",canonicalの有無と重複回避を評価,0,機械,"0=なし, 1=誤URL, 2=重複あり, 3=一部設定, 4=全体設定済, 5=自動生成含む",canonicalタグ存在＋hrefの正規性,,,中,中,2（RAG）
-①A,1a-07,Metaタイトル,$('title').text(),タイトルの有無と構造・長さを評価,0,機械,"0=なし, 1=10字未満, 2=20字未満, 3=20〜40字, 4=40〜60字, 5=キーワード含60字以内",title.lengthとキーワード出現,,,高,中,2（RAG）
-①A,1a-08,Metaディスクリプション,"$('meta[name=""description""]').attr('content')",長さは機械で取得、文の魅力度はAI評価,2,機械＋AI併用,"0=なし, 1=<40字, 2=<80字, 3=<120字, 4=120〜160字, 5=自然文で誘導性あり",文字数取得,自然で魅力的な文か,description文が魅力的か？基準に従い5段階で評価せよ。,中,中,3（AX）
-①A,1a-09,OGPタグ,"$('meta[property^=""og:""]').length",OGP構成の有無とタグ網羅性を評価,0,機械,"0=なし, 1=titleのみ, 2=title/description, 3=画像含む, 4=全構成あり, 5=Twitter等整合","og:title, og:desc, og:image存在数",,,中,中,3（AX）
-①A,1a-10,Twitterカード,"$('meta[name^=""twitter:""]').length",Twitterカード設定の有無と整合性を確認,0,機械,"0=なし, 1=titleのみ, 2=title/desc, 3=画像付き, 4=カード形式指定, 5=画像適正＋形式整合",meta[name^=twitter:]タグの数,,,中,中,3（AX）
-①A,1a-11,canonicalの重複回避,ページ内canonicalの一意性チェック,1URL=1canonicalの実現性を評価,0,機械,"0=未設定, 1=複数設定, 2=不一致, 3=一部統一, 4=全体統一, 5=動的生成含む",hrefとドメインの整合／重複排除,,,中,中,2（RAG）
-①A,1a-12,HTML言語属性（lang）,$('html').attr('lang'),langの記述と本文との一致を評価,2,機械＋AI併用,"0=なし, 1=空欄, 2=誤設定, 3=ja, 4=ja-JP, 5=本文と完全一致",lang属性＋本文の言語推定,lang属性と本文の言語一致性,lang=ja指定時、本文は自然な日本語か？評価基準で5段階で評価せよ。,中,中,3（AX）
+カテゴリ,項目コード,項目名,判定対象,判定方法（ロジック）,評価方式コード,評価方式説明,評価基準,機械ロジック式（簡易記述）,AIプロンプトの目的,AIへの評価プロンプト,重要度（現時点）,影響区分
+①A,1a-01,構造化データ（JSON-LD）,"script[type=""application/ld+json""]",構造化データの有無と整備度を確認,0,機械,0:未設置 / 1:構造破損 / 2:@typeのみ / 3:最低限構造あり / 4:1スキーマ適切 / 5:複数スキーマ共存,@type数＋プロパティ網羅率,,,高,0（全般）
+①A,1a-02,WebSiteスキーマ,"script[type=""application/ld+json""]",WebSiteスキーマの有無と網羅性,0,機械,0:なし / 1:nameのみ / 2:name+url / 3:Action定義 / 4:構成網羅的 / 5:目的含む,WebSite構造のプロパティ数,,,中,1（LLMO）
+①A,1a-03,Organizationスキーマ,"script[type=""application/ld+json""]",Organization構造の記述網羅性,0,機械,0:なし / 1:nameのみ / 2:urlあり / 3:logo等あり / 4:住所等あり / 5:関係構造含む,Organization構造のプロパティ数,,,高,2（RAG）
+①A,1a-04,Serviceスキーマ,"script[type=""application/ld+json""]",Service構造と内容具体性をAIで評価,2,機械＋AI併用,0:なし / 1:タイトルのみ / 2:簡易説明 / 3:カテゴリ記述 / 4:範囲明記 / 5:詳細な構成,"'description','serviceType','areaServed'",descriptionの具体性評価,内容が具体的か？0〜5で評価,高,1（LLMO）
+①A,1a-05,FAQスキーマ,"script[type=""application/ld+json""]",FAQ構造と意味的整合性をAIで評価,2,機械＋AI併用,0:なし / 1:非構造あり / 2:記述不足 / 3:一部構造 / 4:主要整備済 / 5:網羅的,mainEntityのpresence＋形式,QとAの意味的対応,FAQが自然か？0〜5で評価,高,1（LLMO）
+①A,1a-06,カノニカルURL,"link[rel=""canonical""]",正規URLの設定有無と精度,0,機械,0:未設定 / 1:重複 / 2:不一致 / 3:一部適正 / 4:全ページ明示 / 5:自動生成制御あり,hrefの一意性＋URL形式,,,中,2（RAG）
+①A,1a-07,Metaタイトル,title,titleの文字数と構造評価,0,機械,0:なし / 1:<10字 / 2:<20字 / 3:20〜40字 / 4:40〜60字 / 5:キーワード＋自然文,length＋語句含有,,,高,2（RAG）
+①A,1a-08,Metaディスクリプション,"meta[name=""description""]",ディスクリプションの魅力と誘導性,2,機械＋AI併用,0:なし / 1:<40字 / 2:<80字 / 3:<120字 / 4:120〜160字自然文 / 5:魅力・誘導性あり,content文字列のlength,誘導性の高さ,自然で誘導的か？0〜5評価,中,3（AX）
+①A,1a-09,OGPタグ,"meta[property^=""og:""]",OGP構成の有無と整合性,0,機械,0:なし / 1:titleのみ / 2:title+desc / 3:imageあり / 4:全構成 / 5:Twitter等と整合,"og:title, desc, imageの有無",,,中,3（AX）
+①A,1a-10,Twitterカード,"meta[name^=""twitter:""]",Twitterカードの適正設定,0,機械,0:なし / 1:titleのみ / 2:title+desc / 3:imageあり / 4:形式明示 / 5:画像内容最適,summaryカード形式と画像属性,,,中,3（AX）
+①A,1a-11,canonicalの重複回避,"link[rel=""canonical""]",1URL=1canonicalの整合性,0,機械,0:未設定 / 1:複数あり / 2:不一致 / 3:一部一致 / 4:統一済 / 5:動的生成含め統一,canonicalの重複・不整合チェック,,,中,2（RAG）
+①A,1a-12,HTML言語属性（lang）,html,lang属性と本文の言語一致性,2,機械＋AI併用,0:なし / 1:空欄 / 2:不一致 / 3:ja / 4:ja-JP / 5:本文と完全一致,lang属性＋本文の日本語性,lang=jaのとき自然な日本語か,自然で一致するか？0〜5で評価,中,3（AX）
