@@ -51,16 +51,17 @@ async function evaluateItem(item, $) {
   const method = 評価方式コード;
 
 if (method === '0') {
-  // 空欄対策：判定対象が未記入だった場合
   const selector = 判定対象?.trim();
+  
+  // ⛳ 空セレクタ対策（null, 空文字, undefined を防ぐ）
   if (!selector) {
     return {
       id,
       label,
       score: 0,
       rank: 'D',
-      comment: '【注意】この診断項目の「判定対象」が未設定のため、評価できませんでした。',
-      recommendation: 'CSVファイルの該当行に判定対象（セレクタ）を設定してください。',
+      comment: '【未設定】この項目は判定対象（HTMLセレクタ）が設定されていません。',
+      recommendation: 'CSVファイルで判定対象欄に正しいセレクタを入力してください。',
       source: 'machine'
     };
   }
@@ -74,8 +75,8 @@ if (method === '0') {
       label,
       score,
       rank,
-      comment: value > 0 ? '該当要素がHTML内に存在しています。' : '該当要素が確認できませんでした。',
-      recommendation: score < 5 ? '必要なタグや属性を正しく設定しましょう。' : '現状維持で問題ありません。',
+      comment: value > 0 ? '該当する要素がHTML内に存在しています。' : '該当要素が見つかりませんでした。',
+      recommendation: score < 5 ? 'HTML内に必要な要素を追加・修正してください。' : '現状維持で問題ありません。',
       source: 'machine'
     };
   } catch (err) {
@@ -84,8 +85,8 @@ if (method === '0') {
       label,
       score: 0,
       rank: 'D',
-      comment: `【エラー】判定対象「${selector}」の解析中にエラーが発生しました。`,
-      recommendation: 'セレクタに誤りがないかCSVをご確認ください。',
+      comment: `【エラー】セレクタ "${selector}" を解析中に問題が発生しました。`,
+      recommendation: 'HTMLセレクタの指定が正しいかを確認してください。',
       source: 'machine'
     };
   }
