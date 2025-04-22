@@ -53,21 +53,22 @@ async function evaluateItem(item, $) {
 if (method === '0') {
   const selector = 判定対象?.trim();
 
-  // ✅ 空欄チェック（nullや""も含む）
-  if (!selector || selector === '') {
-    console.warn(`【警告】判定対象が空欄のためスキップ（項目コード: ${id}）`);
+  // ✅ 不正・空のセレクタを除外（空・スペース・#・. 単体など）
+  if (!selector || selector.match(/^(\s*|[#.]?\s*)$/)) {
+    console.warn(`⚠ 無効なセレクタでスキップ：id=${id}, セレクタ="${selector}"`);
     return {
       id,
       label,
       score: 0,
       rank: 'D',
-      comment: 'この診断項目の「判定対象」がCSV上で未設定です。',
-      recommendation: 'CSVの該当行に正しいセレクタを設定してください。',
+      comment: 'この診断項目のセレクタが未設定または無効です。',
+      recommendation: 'CSVで該当行の「判定対象」列に正しいCSSセレクタを記入してください。',
       source: 'machine'
     };
   }
 
   try {
+    console.log(`▼診断実行中: id=${id}, セレクタ="${selector}"`);
     const value = $(selector).length;
     const score = value > 0 ? 5 : 0;
     const rank = score >= 5 ? 'A' : score >= 3 ? 'B' : score > 0 ? 'C' : 'D';
@@ -82,14 +83,14 @@ if (method === '0') {
       source: 'machine'
     };
   } catch (err) {
-    console.error(`セレクタエラー（${id}）：${err.message}`);
+    console.error(`❌ セレクタ解析エラー: id=${id}, セレクタ="${selector}" → ${err.message}`);
     return {
       id,
       label,
       score: 0,
       rank: 'D',
-      comment: `【セレクタ解析失敗】 "${selector}" の解析中にエラーが発生しました。`,
-      recommendation: 'CSSセレクタの形式やHTML構造を確認してください。',
+      comment: `【解析エラー】"${selector}" の処理中にエラーが発生しました。`,
+      recommendation: 'CSSセレクタの形式が正しいかCSVを確認してください。',
       source: 'machine'
     };
   }
