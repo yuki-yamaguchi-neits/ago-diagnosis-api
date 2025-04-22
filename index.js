@@ -51,16 +51,18 @@ async function evaluateItem(item, $) {
   const method = 評価方式コード;
 
 if (method === '0') {
-  // セレクタの前処理：空欄・null 対策
   const selector = 判定対象?.trim();
+
+  // ✅ 空欄チェック（nullや""も含む）
   if (!selector || selector === '') {
+    console.warn(`【警告】判定対象が空欄のためスキップ（項目コード: ${id}）`);
     return {
       id,
       label,
       score: 0,
       rank: 'D',
-      comment: '【診断対象が未設定】この項目の「判定対象」列が空欄です。',
-      recommendation: 'CSVに正しいCSSセレクタを記入してください。',
+      comment: 'この診断項目の「判定対象」がCSV上で未設定です。',
+      recommendation: 'CSVの該当行に正しいセレクタを設定してください。',
       source: 'machine'
     };
   }
@@ -69,28 +71,30 @@ if (method === '0') {
     const value = $(selector).length;
     const score = value > 0 ? 5 : 0;
     const rank = score >= 5 ? 'A' : score >= 3 ? 'B' : score > 0 ? 'C' : 'D';
+
     return {
       id,
       label,
       score,
       rank,
-      comment: value > 0 ? 'HTML内に該当要素が存在しています。' : '該当するHTML要素が見つかりませんでした。',
-      recommendation: score < 5 ? 'HTML構造を見直し、要素を追加または修正してください。' : '現状維持で問題ありません。',
+      comment: value > 0 ? '該当要素がHTML内に存在しています。' : '該当要素が見つかりませんでした。',
+      recommendation: score < 5 ? 'HTMLに必要な構造が存在しません。適切に設置してください。' : '現状維持で問題ありません。',
       source: 'machine'
     };
   } catch (err) {
+    console.error(`セレクタエラー（${id}）：${err.message}`);
     return {
       id,
       label,
       score: 0,
       rank: 'D',
-      comment: `【解析エラー】セレクタ "${selector}" を評価中に問題が発生しました。`,
-      recommendation: 'セレクタの記述ミスや対象ページの構造を確認してください。',
+      comment: `【セレクタ解析失敗】 "${selector}" の解析中にエラーが発生しました。`,
+      recommendation: 'CSSセレクタの形式やHTML構造を確認してください。',
       source: 'machine'
     };
   }
 }
-
+  
   if (method === '1') {
     const comment = await generateGPTComment(AIへの評価プロンプト);
     return {
