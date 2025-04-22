@@ -51,33 +51,45 @@ async function evaluateItem(item, $) {
   const method = 評価方式コード;
 
 if (method === '0') {
-  if (!判定対象 || 判定対象.trim() === '') {
+  // 空欄対策：判定対象が未記入だった場合
+  const selector = 判定対象?.trim();
+  if (!selector) {
     return {
       id,
       label,
       score: 0,
       rank: 'D',
-      comment: '判定対象が未設定です。',
-      recommendation: '診断ロジックの修正が必要です。',
+      comment: '【注意】この診断項目の「判定対象」が未設定のため、評価できませんでした。',
+      recommendation: 'CSVファイルの該当行に判定対象（セレクタ）を設定してください。',
       source: 'machine'
     };
   }
 
-  const value = $(判定対象).length;
-  const score = value > 0 ? 5 : 0;
-  const rank = score >= 5 ? 'A' : score >= 3 ? 'B' : score > 0 ? 'C' : 'D';
-
-  return {
-    id,
-    label,
-    score,
-    rank,
-    comment: value > 0 ? '該当要素が存在しています。' : '該当要素が確認できません。',
-    recommendation: score < 5 ? '設定が必要です。' : '現状維持で問題ありません。',
-    source: 'machine'
-  };
+  try {
+    const value = $(selector).length;
+    const score = value > 0 ? 5 : 0;
+    const rank = score >= 5 ? 'A' : score >= 3 ? 'B' : score > 0 ? 'C' : 'D';
+    return {
+      id,
+      label,
+      score,
+      rank,
+      comment: value > 0 ? '該当要素がHTML内に存在しています。' : '該当要素が確認できませんでした。',
+      recommendation: score < 5 ? '必要なタグや属性を正しく設定しましょう。' : '現状維持で問題ありません。',
+      source: 'machine'
+    };
+  } catch (err) {
+    return {
+      id,
+      label,
+      score: 0,
+      rank: 'D',
+      comment: `【エラー】判定対象「${selector}」の解析中にエラーが発生しました。`,
+      recommendation: 'セレクタに誤りがないかCSVをご確認ください。',
+      source: 'machine'
+    };
+  }
 }
-
 
   if (method === '1') {
     const comment = await generateGPTComment(AIへの評価プロンプト);
