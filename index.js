@@ -50,20 +50,34 @@ async function evaluateItem(item, $) {
   const label = 項目名;
   const method = 評価方式コード;
 
-  if (method === '0') {
-    const value = $(判定対象).length;
-    const score = value > 0 ? 5 : 0;
-    const rank = score >= 5 ? 'A' : score >= 3 ? 'B' : score > 0 ? 'C' : 'D';
+if (method === '0') {
+  if (!判定対象 || 判定対象.trim() === '') {
     return {
       id,
       label,
-      score,
-      rank,
-      comment: value > 0 ? '該当要素が存在しています。' : '該当要素が確認できません。',
-      recommendation: score < 5 ? '設定が必要です。' : '現状維持で問題ありません。',
-      source: 'machine',
+      score: 0,
+      rank: 'D',
+      comment: '判定対象が未設定です。',
+      recommendation: '診断ロジックの修正が必要です。',
+      source: 'machine'
     };
   }
+
+  const value = $(判定対象).length;
+  const score = value > 0 ? 5 : 0;
+  const rank = score >= 5 ? 'A' : score >= 3 ? 'B' : score > 0 ? 'C' : 'D';
+
+  return {
+    id,
+    label,
+    score,
+    rank,
+    comment: value > 0 ? '該当要素が存在しています。' : '該当要素が確認できません。',
+    recommendation: score < 5 ? '設定が必要です。' : '現状維持で問題ありません。',
+    source: 'machine'
+  };
+}
+
 
   if (method === '1') {
     const comment = await generateGPTComment(AIへの評価プロンプト);
