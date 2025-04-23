@@ -24,11 +24,11 @@ app.get('/diagnose', async (req, res) => {
         score: $('script[type="application/ld+json"]').length > 0 ? 5 : 0,
         rank: $('script[type="application/ld+json"]').length > 0 ? 'A' : 'D',
         comment: $('script[type="application/ld+json"]').length > 0
-          ? '構造化データが見つかりました。'
-          : '構造化データがありません。',
+          ? '構造化データが確認できました。'
+          : '構造化データが見つかりませんでした。',
         recommendation: $('script[type="application/ld+json"]').length > 0
           ? '現状維持で問題ありません。'
-          : '構造化データ（JSON-LD）を追加してください。',
+          : 'JSON-LD形式の構造化データを設置してください。',
         source: 'machine'
       },
       {
@@ -37,15 +37,16 @@ app.get('/diagnose', async (req, res) => {
         score: $('html[lang]').length > 0 ? 5 : 0,
         rank: $('html[lang]').length > 0 ? 'A' : 'D',
         comment: $('html[lang]').length > 0
-          ? '言語属性が設定されています。'
-          : 'htmlタグにlang属性がありません。',
+          ? 'HTMLに言語属性（lang）が指定されています。'
+          : 'HTMLのlang属性が未指定です。',
         recommendation: $('html[lang]').length > 0
-          ? '現状維持で問題ありません。'
-          : 'htmlタグに lang="ja" などの言語設定を追加してください。',
+          ? 'このままで問題ありません。'
+          : 'htmlタグに lang="ja" などを明記してください。',
         source: 'machine'
       }
     ];
 
+    // スコア・評価
     const totalScore = results.reduce((sum, r) => sum + r.score, 0);
     const evaluatedItems = results.length;
     const maxScore = evaluatedItems * 5;
@@ -59,13 +60,24 @@ app.get('/diagnose', async (req, res) => {
       evaluated_items: evaluatedItems,
       percentage,
       rank,
-      summary: "これは仮の総合コメントです。",
+      summary: "構造化データや言語設定など、AIに理解されるための基本が整っているかを確認しました。",
       results
     });
 
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: '診断中にエラーが発生しました。' });
+    console.error("診断中エラー:", err.message);
+    res.status(500).json({
+      error: '診断処理中にエラーが発生しました',
+      results: [{
+        id: 'system',
+        label: '診断不能',
+        score: 0,
+        rank: 'D',
+        comment: 'HTMLの解析に失敗しました。URLが正しいか確認してください。',
+        recommendation: '対象ページが存在するか、サーバーが応答しているかをご確認ください。',
+        source: 'system'
+      }]
+    });
   }
 });
 
