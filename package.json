@@ -2,7 +2,6 @@
   "name": "ago-diagnosis-api",
   "version": "1.0.0",
   "description": "AI対策診断API",
-  "type": "module",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
