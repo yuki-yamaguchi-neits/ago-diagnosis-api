@@ -1,9 +1,8 @@
-import express from 'express';
-import cors from 'cors';
-import axios from 'axios';
-import cheerio from 'cheerio';
-import dotenv from 'dotenv';
-dotenv.config();
+const express = require('express');
+const cors = require('cors');
+const axios = require('axios');
+const cheerio = require('cheerio');
+require('dotenv').config();
 
 const app = express();
 const port = process.env.PORT || 10000;
@@ -18,7 +17,7 @@ app.use((req, res, next) => {
 
 app.use(cors());
 
-// 🔧 汎用スコア評価関数（出現数に応じてスコア変換）
+// スコア評価関数
 function getScoreByCount(count) {
   if (count >= 5) return 5;
   if (count === 4) return 4;
@@ -28,7 +27,7 @@ function getScoreByCount(count) {
   return 0;
 }
 
-// 🔧 スコア → ランク
+// スコア→ランク変換
 function getRank(score) {
   if (score >= 5) return 'A';
   if (score >= 4) return 'B';
@@ -80,14 +79,14 @@ app.get('/diagnose', async (req, res) => {
       source: 'machine'
     });
 
-    // ✅ 総合評価計算
+    // ✅ 総合評価
     const totalScore = results.reduce((sum, r) => sum + r.score, 0);
     const evaluatedItems = results.length;
     const maxScore = evaluatedItems * 5;
     const percentage = Math.round((totalScore / maxScore) * 100);
     const rank = percentage >= 85 ? 'A' : percentage >= 70 ? 'B' : percentage >= 50 ? 'C' : 'D';
 
-    // ✅ summary（総評）
+    // ✅ 総合コメント
     let summary = '';
     if (percentage >= 85) {
       summary = '全体的に非常に良好な構成です。構造化データやHTML属性が整っており、AIから正確に理解される状態に近いです。';
