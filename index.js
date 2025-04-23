@@ -1,11 +1,9 @@
+const express = require('express');
+const cors = require('cors');
+const axios = require('axios');
+const cheerio = require('cheerio');
+require('dotenv').config();
 
-import express from 'express';
-import cors from 'cors';
-import axios from 'axios';
-import cheerio from 'cheerio';
-import { config } from 'dotenv';
-
-config();
 const app = express();
 const port = process.env.PORT || 10000;
 
@@ -19,7 +17,6 @@ app.get('/diagnose', async (req, res) => {
     const response = await axios.get(targetUrl);
     const $ = cheerio.load(response.data);
 
-    // 仮の判定ロジック（12項目）例
     const results = [
       {
         id: '1a-01',
