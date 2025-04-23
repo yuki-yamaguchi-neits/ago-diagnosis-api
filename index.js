@@ -7,6 +7,15 @@ require('dotenv').config();
 const app = express();
 const port = process.env.PORT || 10000;
 
+// ✅ キャッシュを防ぐヘッダーをすべてのレスポンスに付ける
+app.use((req, res, next) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  res.setHeader("Surrogate-Control", "no-store");
+  next();
+});
+
 app.use(cors());
 
 app.get('/diagnose', async (req, res) => {
