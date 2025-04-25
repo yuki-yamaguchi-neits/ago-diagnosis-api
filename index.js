@@ -2,29 +2,28 @@ const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
 const cheerio = require('cheerio');
+const fs = require('fs');
+const csv = require('csv-parser');
+const { Configuration, OpenAIApi } = require('openai');
 require('dotenv').config();
 
 const app = express();
 const port = process.env.PORT || 10000;
-
-app.use((req, res, next) => {
-  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
-  res.setHeader("Pragma", "no-cache");
-  res.setHeader("Expires", "0");
-  res.setHeader("Surrogate-Control", "no-store");
-  next();
-});
-
 app.use(cors());
 
-// スコア評価関数
-function getScoreByCount(count) {
-  if (count >= 5) return 5;
-  if (count === 4) return 4;
-  if (count === 3) return 3;
-  if (count === 2) return 2;
-  if (count === 1) return 1;
-  return 0;
+// OpenAI API初期化
+const openai = new OpenAIApi(new Configuration({ apiKey: process.env.OPENAI_API_KEY }));
+
+// CSVを非同期で読み込む関数
+function loadCsvDefinitions(path) {
+  return new Promise((resolve, reject) => {
+    const results = [];
+    fs.createReadStream(path)
+      .pipe(csv())
+      .on('data', (data) => results.push(data))
+      .on('end', () => resolve(results))
+      .on('error', reject);
+  });
 }
 
 // スコア→ランク変換
@@ -36,71 +35,94 @@ function getRank(score) {
   return 'E';
 }
 
+// 提案テンプレートを配列で処理（0〜5に対応）
+function getTemplateForScore(raw, score) {
+  const parts = (raw || '').split('/');
+  return parts[score] || parts[parts.length - 1] || '';
+}
+
+// メイン診断API
 app.get('/diagnose', async (req, res) => {
-  const targetUrl = req.query.url;
-  if (!targetUrl) return res.status(400).json({ error: 'URL parameter is required.' });
+  const url = req.query.url;
+  if (!url) return res.status(400).json({ error: 'URLパラメータが必要です。' });
 
   try {
-    const response = await axios.get(targetUrl);
-    const $ = cheerio.load(response.data);
+    const html = (await axios.get(url)).data;
+    const $ = cheerio.load(html);
+    const definitions = await loadCsvDefinitions('./ai-diagnosis-definition-v1.csv');
     const results = [];
 
-    // ✅ 1a-01 構造化データ（JSON-LD）
-    const jsonLdCount = $('script[type="application/ld+json"]').length;
-    const score1 = getScoreByCount(jsonLdCount);
-    results.push({
-      id: '1a-01',
-      label: '構造化データ（JSON-LD）',
-      score: score1,
-      rank: getRank(score1),
-      comment: jsonLdCount > 0
-        ? `${jsonLdCount}件のJSON-LD構造化データが検出されました。`
-        : '構造化データが見つかりませんでした。',
-      recommendation: score1 < 5
-        ? '最低でも3件以上のJSON-LD構造化データを配置してください。'
-        : '現状維持で問題ありません。',
-      source: 'machine'
-    });
+    for (const row of definitions) {
+      const {
+        項目コード: id,
+        項目名: label,
+        判定対象: selector,
+        評価方式コード: method,
+        AIへの評価プロンプト: aiPrompt,
+        提案テンプレート（機械判定用）: rawTemplates
+      } = row;
 
-    // ✅ 1a-02 HTML言語属性（lang）
-    const langAttr = $('html').attr('lang');
-    const score2 = langAttr ? 5 : 0;
-    results.push({
-      id: '1a-02',
-      label: 'HTML言語属性（lang）',
-      score: score2,
-      rank: getRank(score2),
-      comment: langAttr
-        ? `言語属性 "${langAttr}" が設定されています。`
-        : 'HTMLのlang属性が未設定です。',
-      recommendation: score2 < 5
-        ? 'htmlタグに lang="ja" などを明記してください。'
-        : 'このままで問題ありません。',
-      source: 'machine'
-    });
+      let score = 0;
+      let comment = '';
+      let recommendation = '';
+      let source = 'machine';
 
-    // ✅ 総合評価
+      try {
+        if (method === '0') {
+          // ✅ 機械判定（スコア決定方法はCSVでの記述内容に従ってここで実装）
+          const count = $(selector).length;
+          score = count >= 5 ? 5 : count;
+          comment = `${count}件の要素が検出されました。`;
+          recommendation = getTemplateForScore(rawTemplates, score);
+
+        } else if (method === '1' || method === '2') {
+          // ✅ AI判定またはハイブリッド
+          const context = $(selector).toString();
+          const prompt = `${aiPrompt}\n\n該当HTML要素:\n${context}`;
+          const aiResponse = await openai.createChatCompletion({
+            model: 'gpt-4',
+            messages: [{ role: 'user', content: prompt }],
+            temperature: 0.4
+          });
+          const reply = aiResponse.data.choices[0].message.content.trim();
+          const match = reply.match(/([0-5])/);
+          score = match ? parseInt(match[1]) : 0;
+          comment = reply;
+          recommendation = getTemplateForScore(rawTemplates, score);
+          source = 'ai';
+        }
+      } catch (e) {
+        score = 0;
+        comment = `評価エラー: ${e.message}`;
+        recommendation = '再実行を推奨します。';
+        source = 'error';
+      }
+
+      results.push({
+        id,
+        label,
+        score,
+        rank: getRank(score),
+        comment,
+        recommendation,
+        source
+      });
+    }
+
     const totalScore = results.reduce((sum, r) => sum + r.score, 0);
-    const evaluatedItems = results.length;
-    const maxScore = evaluatedItems * 5;
+    const maxScore = results.length * 5;
     const percentage = Math.round((totalScore / maxScore) * 100);
     const rank = percentage >= 85 ? 'A' : percentage >= 70 ? 'B' : percentage >= 50 ? 'C' : 'D';
-
-    // ✅ 総合コメント
-    let summary = '';
-    if (percentage >= 85) {
-      summary = '全体的に非常に良好な構成です。構造化データやHTML属性が整っており、AIから正確に理解される状態に近いです。';
-    } else if (percentage >= 70) {
-      summary = '基礎的な対策はできていますが、一部補強すべき項目があります。特に構造化データや言語設定の見直しを推奨します。';
-    } else {
-      summary = 'AIにとって十分に理解できる構成とは言えません。基本的な構造化や属性指定が不足しています。早急な見直しが必要です。';
-    }
+    const summary =
+      rank === 'A' ? '非常に良好な構成です。' :
+      rank === 'B' ? '基本的な対策はできています。' :
+      'AIに正しく伝わるための改善が必要です。';
 
     res.json({
       timestamp: new Date().toISOString(),
-      url: targetUrl,
+      url,
       total_score: totalScore,
-      evaluated_items: evaluatedItems,
+      evaluated_items: results.length,
       percentage,
       rank,
       summary,
@@ -108,19 +130,8 @@ app.get('/diagnose', async (req, res) => {
     });
 
   } catch (err) {
-    console.error("診断中エラー:", err.message);
-    res.status(500).json({
-      error: '診断処理中にエラーが発生しました',
-      results: [{
-        id: 'system',
-        label: '診断不能',
-        score: 0,
-        rank: 'E',
-        comment: 'HTMLの解析に失敗しました。URLが正しいか確認してください。',
-        recommendation: '対象ページが存在するか、サーバーが応答しているかをご確認ください。',
-        source: 'system'
-      }]
-    });
+    console.error('診断エラー:', err.message);
+    res.status(500).json({ error: '診断処理に失敗しました。' });
   }
 });
 
